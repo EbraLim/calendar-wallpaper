@@ -7,6 +7,7 @@ const app = document.querySelector<HTMLDivElement>('#app')!;
 let currentImage: HTMLImageElement | null = null;
 let currentPreset: DevicePreset = DEFAULT_PRESET;
 let cachedBlob: Blob | null = null;
+let prevPreviewUrl = '';
 
 const sampleImg = new Image();
 sampleImg.src = '/sample.svg';
@@ -15,11 +16,29 @@ function getImage(): HTMLImageElement {
   return currentImage ?? sampleImg;
 }
 
+// 렌더링용 캔버스 (DOM에 넣지 않음)
+const canvas = document.createElement('canvas');
+
+// 미리보기 <img> — 길게 누르면 iOS "사진에 추가" 가능
+const preview = document.createElement('img');
+preview.className = 'preview';
+preview.alt = '달력 배경화면 미리보기';
+
+const hint = document.createElement('p');
+hint.className = 'hint';
+hint.textContent = '이미지를 길게 눌러 사진에 저장할 수 있어요';
+
 function rerender() {
   const img = getImage();
   if (!img.complete || img.naturalWidth === 0) return;
   renderLockscreen(canvas, img, currentPreset);
-  canvas.toBlob((b) => { cachedBlob = b; }, 'image/png');
+  canvas.toBlob((b) => {
+    cachedBlob = b;
+    if (!b) return;
+    if (prevPreviewUrl) URL.revokeObjectURL(prevPreviewUrl);
+    prevPreviewUrl = URL.createObjectURL(b);
+    preview.src = prevPreviewUrl;
+  }, 'image/png');
 }
 
 // — 사진 선택 —
@@ -62,14 +81,11 @@ const presetButtons: HTMLButtonElement[] = PRESETS.map((preset, i) => {
   return btn;
 });
 
-// — 캔버스 —
-const canvas = document.createElement('canvas');
-
 // — 저장/공유 —
-const downloadBtn = document.createElement('button');
-downloadBtn.className = 'download-btn';
-downloadBtn.textContent = '저장 / 공유';
-downloadBtn.addEventListener('click', async () => {
+const shareBtn = document.createElement('button');
+shareBtn.className = 'download-btn';
+shareBtn.textContent = '저장 / 공유';
+shareBtn.addEventListener('click', async () => {
   const blob = cachedBlob;
   if (!blob) return;
 
@@ -94,7 +110,7 @@ downloadBtn.addEventListener('click', async () => {
 });
 
 // — DOM 조립 —
-app.append(uploadLabel, presetBar, canvas, downloadBtn);
+app.append(uploadLabel, presetBar, preview, hint, shareBtn);
 
 sampleImg.onload = () => rerender();
 if (sampleImg.complete && sampleImg.naturalWidth > 0) rerender();
