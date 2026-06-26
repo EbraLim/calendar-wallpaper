@@ -73,15 +73,16 @@ downloadBtn.addEventListener('click', async () => {
   const blob = cachedBlob;
   if (!blob) return;
 
-  const file = new File([blob], 'calendar-wallpaper.png', { type: 'image/png' });
-
-  try {
-    if (navigator.share && navigator.canShare?.({ files: [file] })) {
+  if (navigator.share) {
+    try {
+      const file = new File([blob], 'calendar-wallpaper.png', {
+        type: 'image/png',
+      });
       await navigator.share({ files: [file] });
       return;
+    } catch (e) {
+      if (e instanceof Error && e.name === 'AbortError') return;
     }
-  } catch (e) {
-    if (e instanceof Error && e.name === 'AbortError') return;
   }
 
   const url = URL.createObjectURL(blob);
