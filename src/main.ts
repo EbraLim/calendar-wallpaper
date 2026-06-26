@@ -6,6 +6,7 @@ const app = document.querySelector<HTMLDivElement>('#app')!;
 
 let currentImage: HTMLImageElement | null = null;
 let currentPreset: DevicePreset = DEFAULT_PRESET;
+let cachedBlob: Blob | null = null;
 
 const sampleImg = new Image();
 sampleImg.src = '/sample.svg';
@@ -18,6 +19,7 @@ function rerender() {
   const img = getImage();
   if (!img.complete || img.naturalWidth === 0) return;
   renderLockscreen(canvas, img, currentPreset);
+  canvas.toBlob((b) => { cachedBlob = b; }, 'image/png');
 }
 
 // — 사진 선택 —
@@ -67,29 +69,27 @@ const canvas = document.createElement('canvas');
 const downloadBtn = document.createElement('button');
 downloadBtn.className = 'download-btn';
 downloadBtn.textContent = '저장 / 공유';
-downloadBtn.addEventListener('click', () => {
-  canvas.toBlob(async (blob) => {
-    if (!blob) return;
+downloadBtn.addEventListener('click', async () => {
+  const blob = cachedBlob;
+  if (!blob) return;
 
-    const file = new File([blob], 'calendar-wallpaper.png', { type: 'image/png' });
+  const file = new File([blob], 'calendar-wallpaper.png', { type: 'image/png' });
 
-    if (navigator.canShare?.({ files: [file] })) {
-      try {
-        await navigator.share({ files: [file] });
-        return;
-      } catch (_) {
-        // 사용자가 공유 시트를 닫은 경우 — 무시
-      }
+  try {
+    if (navigator.share && navigator.canShare?.({ files: [file] })) {
+      await navigator.share({ files: [file] });
+      return;
     }
+  } catch (e) {
+    if (e instanceof Error && e.name === 'AbortError') return;
+  }
 
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    const now = new Date();
-    a.download = `lockscreen-${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}.png`;
-    a.href = url;
-    a.click();
-    URL.revokeObjectURL(url);
-  }, 'image/png');
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.download = 'calendar-wallpaper.png';
+  a.href = url;
+  a.click();
+  URL.revokeObjectURL(url);
 });
 
 // — DOM 조립 —
