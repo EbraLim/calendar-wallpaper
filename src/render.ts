@@ -1,0 +1,127 @@
+import { CANVAS, CALENDAR_AREA } from './safezones';
+import { getMonthData, getCalendarGrid, type MonthData } from './calendar';
+
+const DAY_LABELS = ['일', '월', '화', '수', '목', '금', '토'];
+const FONT = '-apple-system, "Apple SD Gothic Neo", sans-serif';
+
+export function renderLockscreen(
+  canvas: HTMLCanvasElement,
+  img: HTMLImageElement,
+): void {
+  canvas.width = CANVAS.width;
+  canvas.height = CANVAS.height;
+  const ctx = canvas.getContext('2d')!;
+
+  drawCover(ctx, img);
+
+  const now = new Date();
+  const data = getMonthData(now.getFullYear(), now.getMonth() + 1);
+  const grid = getCalendarGrid(data);
+  const brightness = sampleBrightness(ctx);
+
+  drawCalendar(ctx, data, grid, now.getDate(), brightness < 128);
+}
+
+function drawCover(
+  ctx: CanvasRenderingContext2D,
+  img: HTMLImageElement,
+): void {
+  const cw = ctx.canvas.width;
+  const ch = ctx.canvas.height;
+  const imgR = img.naturalWidth / img.naturalHeight;
+  const canvasR = cw / ch;
+
+  let sx = 0,
+    sy = 0,
+    sw = img.naturalWidth,
+    sh = img.naturalHeight;
+
+  if (imgR > canvasR) {
+    sw = img.naturalHeight * canvasR;
+    sx = (img.naturalWidth - sw) / 2;
+  } else {
+    sh = img.naturalWidth / canvasR;
+    sy = (img.naturalHeight - sh) / 2;
+  }
+
+  ctx.drawImage(img, sx, sy, sw, sh, 0, 0, cw, ch);
+}
+
+function sampleBrightness(ctx: CanvasRenderingContext2D): number {
+  const { x, y, width, height } = CALENDAR_AREA;
+  const { data } = ctx.getImageData(x, y, width, height);
+  let sum = 0;
+  let count = 0;
+  for (let i = 0; i < data.length; i += 40) {
+    sum += (data[i] * 299 + data[i + 1] * 587 + data[i + 2] * 114) / 1000;
+    count++;
+  }
+  return sum / count;
+}
+
+function drawCalendar(
+  ctx: CanvasRenderingContext2D,
+  data: MonthData,
+  grid: (number | null)[][],
+  today: number,
+  isDark: boolean,
+): void {
+  const zone = CALENDAR_AREA;
+
+  const panel = isDark ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.55)';
+  const text = isDark ? '#ffffff' : '#1a1a1a';
+  const dim = isDark ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.5)';
+  const sun = isDark ? '#ff6b6b' : '#e74c3c';
+  const sat = isDark ? '#74b9ff' : '#2980b9';
+
+  ctx.fillStyle = panel;
+  ctx.beginPath();
+  ctx.roundRect(zone.x, zone.y, zone.width, zone.height, 32);
+  ctx.fill();
+
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  const title = `${data.year}년 ${data.month}월`;
+  ctx.fillStyle = text;
+  ctx.font = `bold 54px ${FONT}`;
+  ctx.fillText(title, zone.x + zone.width / 2, zone.y + 60);
+
+  const pad = 40;
+  const innerW = zone.width - pad * 2;
+  const cellW = innerW / 7;
+  const headerY = zone.y + 130;
+
+  ctx.font = `34px ${FONT}`;
+  for (let i = 0; i < 7; i++) {
+    ctx.fillStyle = i === 0 ? sun : i === 6 ? sat : dim;
+    ctx.fillText(DAY_LABELS[i], zone.x + pad + cellW * i + cellW / 2, headerY);
+  }
+
+  const gridTop = headerY + 50;
+  const gridBottom = zone.y + zone.height - 30;
+  const rowH = (gridBottom - gridTop) / grid.length;
+
+  ctx.font = `42px ${FONT}`;
+  for (let r = 0; r < grid.length; r++) {
+    for (let c = 0; c < 7; c++) {
+      const day = grid[r][c];
+      if (day === null) continue;
+
+      const cx = zone.x + pad + cellW * c + cellW / 2;
+      const cy = gridTop + rowH * r + rowH / 2;
+
+      if (day === today) {
+        ctx.fillStyle = '#e94560';
+        ctx.beginPath();
+        ctx.arc(cx, cy, 32, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#ffffff';
+      } else {
+        ctx.fillStyle = c === 0 ? sun : c === 6 ? sat : text;
+      }
+
+      ctx.fillText(String(day), cx, cy);
+    }
+  }
+}
