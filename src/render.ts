@@ -5,10 +5,16 @@ const DAY_LABELS = ['일', '월', '화', '수', '목', '금', '토'];
 const FONT = '-apple-system, "Apple SD Gothic Neo", sans-serif';
 const BASE_WIDTH = 1290;
 
+export interface Offset {
+  x: number;
+  y: number;
+}
+
 export function renderLockscreen(
   canvas: HTMLCanvasElement,
   img: HTMLImageElement,
   preset: DevicePreset,
+  offset: Offset = { x: 0, y: 0 },
 ): void {
   canvas.width = preset.width;
   canvas.height = preset.height;
@@ -16,12 +22,19 @@ export function renderLockscreen(
 
   drawCover(ctx, img);
 
+  const zone = {
+    x: preset.calendarArea.x + offset.x,
+    y: preset.calendarArea.y + offset.y,
+    width: preset.calendarArea.width,
+    height: preset.calendarArea.height,
+  };
+
   const now = new Date();
   const data = getMonthData(now.getFullYear(), now.getMonth() + 1);
   const grid = getCalendarGrid(data);
-  const brightness = sampleBrightness(ctx, preset.calendarArea);
+  const brightness = sampleBrightness(ctx, zone);
 
-  drawCalendar(ctx, data, grid, now.getDate(), brightness < 128, preset);
+  drawCalendar(ctx, data, grid, now.getDate(), brightness < 128, preset, zone);
 }
 
 function drawCover(
@@ -49,11 +62,19 @@ function drawCover(
   ctx.drawImage(img, sx, sy, sw, sh, 0, 0, cw, ch);
 }
 
+type Rect = { x: number; y: number; width: number; height: number };
+
 function sampleBrightness(
   ctx: CanvasRenderingContext2D,
-  area: DevicePreset['calendarArea'],
+  zone: Rect,
 ): number {
-  const { data } = ctx.getImageData(area.x, area.y, area.width, area.height);
+  const x = Math.max(0, Math.round(zone.x));
+  const y = Math.max(0, Math.round(zone.y));
+  const w = Math.min(ctx.canvas.width - x, Math.round(zone.width));
+  const h = Math.min(ctx.canvas.height - y, Math.round(zone.height));
+  if (w <= 0 || h <= 0) return 128;
+
+  const { data } = ctx.getImageData(x, y, w, h);
   let sum = 0;
   let count = 0;
   for (let i = 0; i < data.length; i += 40) {
@@ -70,8 +91,8 @@ function drawCalendar(
   today: number,
   isDark: boolean,
   preset: DevicePreset,
+  zone: Rect,
 ): void {
-  const zone = preset.calendarArea;
   const s = preset.width / BASE_WIDTH;
 
   const panel = isDark ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.55)';
