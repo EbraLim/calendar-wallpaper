@@ -1,15 +1,17 @@
-import { CANVAS, CALENDAR_AREA } from './safezones';
+import { type DevicePreset } from './safezones';
 import { getMonthData, getCalendarGrid, type MonthData } from './calendar';
 
 const DAY_LABELS = ['일', '월', '화', '수', '목', '금', '토'];
 const FONT = '-apple-system, "Apple SD Gothic Neo", sans-serif';
+const BASE_WIDTH = 1290;
 
 export function renderLockscreen(
   canvas: HTMLCanvasElement,
   img: HTMLImageElement,
+  preset: DevicePreset,
 ): void {
-  canvas.width = CANVAS.width;
-  canvas.height = CANVAS.height;
+  canvas.width = preset.width;
+  canvas.height = preset.height;
   const ctx = canvas.getContext('2d')!;
 
   drawCover(ctx, img);
@@ -17,9 +19,9 @@ export function renderLockscreen(
   const now = new Date();
   const data = getMonthData(now.getFullYear(), now.getMonth() + 1);
   const grid = getCalendarGrid(data);
-  const brightness = sampleBrightness(ctx);
+  const brightness = sampleBrightness(ctx, preset.calendarArea);
 
-  drawCalendar(ctx, data, grid, now.getDate(), brightness < 128);
+  drawCalendar(ctx, data, grid, now.getDate(), brightness < 128, preset);
 }
 
 function drawCover(
@@ -47,9 +49,11 @@ function drawCover(
   ctx.drawImage(img, sx, sy, sw, sh, 0, 0, cw, ch);
 }
 
-function sampleBrightness(ctx: CanvasRenderingContext2D): number {
-  const { x, y, width, height } = CALENDAR_AREA;
-  const { data } = ctx.getImageData(x, y, width, height);
+function sampleBrightness(
+  ctx: CanvasRenderingContext2D,
+  area: DevicePreset['calendarArea'],
+): number {
+  const { data } = ctx.getImageData(area.x, area.y, area.width, area.height);
   let sum = 0;
   let count = 0;
   for (let i = 0; i < data.length; i += 40) {
@@ -65,8 +69,10 @@ function drawCalendar(
   grid: (number | null)[][],
   today: number,
   isDark: boolean,
+  preset: DevicePreset,
 ): void {
-  const zone = CALENDAR_AREA;
+  const zone = preset.calendarArea;
+  const s = preset.width / BASE_WIDTH;
 
   const panel = isDark ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.55)';
   const text = isDark ? '#ffffff' : '#1a1a1a';
@@ -76,7 +82,7 @@ function drawCalendar(
 
   ctx.fillStyle = panel;
   ctx.beginPath();
-  ctx.roundRect(zone.x, zone.y, zone.width, zone.height, 32);
+  ctx.roundRect(zone.x, zone.y, zone.width, zone.height, 32 * s);
   ctx.fill();
 
   ctx.textAlign = 'center';
@@ -84,25 +90,25 @@ function drawCalendar(
 
   const title = `${data.year}년 ${data.month}월`;
   ctx.fillStyle = text;
-  ctx.font = `bold 54px ${FONT}`;
-  ctx.fillText(title, zone.x + zone.width / 2, zone.y + 60);
+  ctx.font = `bold ${Math.round(54 * s)}px ${FONT}`;
+  ctx.fillText(title, zone.x + zone.width / 2, zone.y + 60 * s);
 
-  const pad = 40;
+  const pad = 40 * s;
   const innerW = zone.width - pad * 2;
   const cellW = innerW / 7;
-  const headerY = zone.y + 130;
+  const headerY = zone.y + 130 * s;
 
-  ctx.font = `34px ${FONT}`;
+  ctx.font = `${Math.round(34 * s)}px ${FONT}`;
   for (let i = 0; i < 7; i++) {
     ctx.fillStyle = i === 0 ? sun : i === 6 ? sat : dim;
     ctx.fillText(DAY_LABELS[i], zone.x + pad + cellW * i + cellW / 2, headerY);
   }
 
-  const gridTop = headerY + 50;
-  const gridBottom = zone.y + zone.height - 30;
+  const gridTop = headerY + 50 * s;
+  const gridBottom = zone.y + zone.height - 30 * s;
   const rowH = (gridBottom - gridTop) / grid.length;
 
-  ctx.font = `42px ${FONT}`;
+  ctx.font = `${Math.round(42 * s)}px ${FONT}`;
   for (let r = 0; r < grid.length; r++) {
     for (let c = 0; c < 7; c++) {
       const day = grid[r][c];
@@ -114,7 +120,7 @@ function drawCalendar(
       if (day === today) {
         ctx.fillStyle = '#e94560';
         ctx.beginPath();
-        ctx.arc(cx, cy, 32, 0, Math.PI * 2);
+        ctx.arc(cx, cy, 32 * s, 0, Math.PI * 2);
         ctx.fill();
         ctx.fillStyle = '#ffffff';
       } else {
