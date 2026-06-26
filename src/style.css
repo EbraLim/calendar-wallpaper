@@ -58,13 +58,25 @@ body {
   color: #fff;
 }
 
-/* 미리보기 이미지 — 길게 눌러 저장 가능 */
+/* 미리보기 래퍼 */
+.preview-wrap {
+  position: relative;
+  display: flex;
+  justify-content: center;
+}
+
+/* 미리보기 (img + canvas 공용) */
 .preview {
   max-width: 100%;
   max-height: 68dvh;
   border-radius: 12px;
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
   -webkit-touch-callout: default;
+  cursor: grab;
+}
+
+.preview:active {
+  cursor: grabbing;
 }
 
 .hint {
