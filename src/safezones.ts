@@ -1,15 +1,34 @@
-export const CANVAS = { width: 1290, height: 2796 } as const;
+export interface DevicePreset {
+  label: string;
+  width: number;
+  height: number;
+  calendarArea: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+}
 
-// iPhone 14 Pro 잠금화면 — 시스템 UI가 차지하는 영역 (px, @3x)
-export const SYSTEM_UI = {
-  statusAndClock: { top: 0, height: 700 },
-  bottomControls: { top: 2500, height: 296 },
-} as const;
+export const PRESETS: readonly DevicePreset[] = [
+  {
+    label: 'iPhone Pro',
+    width: 1290,
+    height: 2796,
+    calendarArea: { x: 80, y: 1000, width: 1130, height: 800 },
+  },
+  {
+    label: 'iPhone 표준',
+    width: 1170,
+    height: 2532,
+    calendarArea: { x: 70, y: 900, width: 1030, height: 730 },
+  },
+  {
+    label: 'Android 일반',
+    width: 1080,
+    height: 2400,
+    calendarArea: { x: 60, y: 850, width: 960, height: 700 },
+  },
+];
 
-// 달력을 배치할 안전 영역 (시스템 UI를 피한 중앙부)
-export const CALENDAR_AREA = {
-  x: 80,
-  y: 1000,
-  width: 1130,
-  height: 800,
-} as const;
+export const DEFAULT_PRESET = PRESETS[0];
