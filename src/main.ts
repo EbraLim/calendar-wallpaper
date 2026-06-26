@@ -63,13 +63,25 @@ const presetButtons: HTMLButtonElement[] = PRESETS.map((preset, i) => {
 // — 캔버스 —
 const canvas = document.createElement('canvas');
 
-// — 다운로드 —
+// — 저장/공유 —
 const downloadBtn = document.createElement('button');
 downloadBtn.className = 'download-btn';
-downloadBtn.textContent = 'PNG 다운로드';
+downloadBtn.textContent = '저장 / 공유';
 downloadBtn.addEventListener('click', () => {
-  canvas.toBlob((blob) => {
+  canvas.toBlob(async (blob) => {
     if (!blob) return;
+
+    const file = new File([blob], 'calendar-wallpaper.png', { type: 'image/png' });
+
+    if (navigator.canShare?.({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file] });
+        return;
+      } catch (_) {
+        // 사용자가 공유 시트를 닫은 경우 — 무시
+      }
+    }
+
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     const now = new Date();
