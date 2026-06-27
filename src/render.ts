@@ -2,7 +2,7 @@ import { type DevicePreset } from './safezones';
 import { getMonthData, getCalendarGrid, type MonthData } from './calendar';
 
 const DAY_LABELS = ['일', '월', '화', '수', '목', '금', '토'];
-const FONT = '-apple-system, "Apple SD Gothic Neo", sans-serif';
+const FONT = '-apple-system, "Apple SD Gothic Neo", system-ui, sans-serif';
 const BASE_WIDTH = 1290;
 
 export interface Offset {
@@ -10,11 +10,44 @@ export interface Offset {
   y: number;
 }
 
+export type CalendarTheme = 'auto' | 'dark' | 'light' | 'transparent';
+export type CalendarSize = 'small' | 'medium' | 'large';
+
+export interface CalendarStyle {
+  theme: CalendarTheme;
+  opacity: number;
+  size: CalendarSize;
+}
+
+export const DEFAULT_STYLE: CalendarStyle = {
+  theme: 'auto',
+  opacity: 0.4,
+  size: 'medium',
+};
+
+export const SIZE_MULT: Record<CalendarSize, number> = {
+  small: 0.85,
+  medium: 1.0,
+  large: 1.1,
+};
+
+interface ThemeColors {
+  panel: string;
+  text: string;
+  dim: string;
+  sun: string;
+  sat: string;
+  shadow: string;
+}
+
+type Rect = { x: number; y: number; width: number; height: number };
+
 export function renderLockscreen(
   canvas: HTMLCanvasElement,
   img: HTMLImageElement,
   preset: DevicePreset,
   offset: Offset = { x: 0, y: 0 },
+  style: CalendarStyle = DEFAULT_STYLE,
 ): void {
   canvas.width = preset.width;
   canvas.height = preset.height;
@@ -22,34 +55,41 @@ export function renderLockscreen(
 
   drawCover(ctx, img);
 
-  const zone = {
-    x: preset.calendarArea.x + offset.x,
-    y: preset.calendarArea.y + offset.y,
-    width: preset.calendarArea.width,
-    height: preset.calendarArea.height,
+  const sm = SIZE_MULT[style.size];
+  const a = preset.calendarArea;
+  const cx = a.x + offset.x + a.width / 2;
+  const cy = a.y + offset.y + a.height / 2;
+  const w = a.width * sm;
+  const h = a.height * sm;
+
+  const zone: Rect = {
+    x: Math.max(0, Math.min(preset.width - w, cx - w / 2)),
+    y: Math.max(0, Math.min(preset.height - h, cy - h / 2)),
+    width: w,
+    height: h,
   };
 
   const now = new Date();
   const data = getMonthData(now.getFullYear(), now.getMonth() + 1);
   const grid = getCalendarGrid(data);
-  const brightness = sampleBrightness(ctx, zone);
 
-  drawCalendar(ctx, data, grid, now.getDate(), brightness < 128, preset, zone);
+  const brightness = sampleBrightness(ctx, zone);
+  const isDark = brightness < 128;
+  const colors = resolveColors(style.theme, isDark, style.opacity);
+  const s = (preset.width / BASE_WIDTH) * sm;
+
+  drawCalendar(ctx, data, grid, now.getDate(), colors, s, zone);
 }
 
-function drawCover(
-  ctx: CanvasRenderingContext2D,
-  img: HTMLImageElement,
-): void {
+// ---- internal ----
+
+function drawCover(ctx: CanvasRenderingContext2D, img: HTMLImageElement): void {
   const cw = ctx.canvas.width;
   const ch = ctx.canvas.height;
   const imgR = img.naturalWidth / img.naturalHeight;
   const canvasR = cw / ch;
 
-  let sx = 0,
-    sy = 0,
-    sw = img.naturalWidth,
-    sh = img.naturalHeight;
+  let sx = 0, sy = 0, sw = img.naturalWidth, sh = img.naturalHeight;
 
   if (imgR > canvasR) {
     sw = img.naturalHeight * canvasR;
@@ -62,12 +102,7 @@ function drawCover(
   ctx.drawImage(img, sx, sy, sw, sh, 0, 0, cw, ch);
 }
 
-type Rect = { x: number; y: number; width: number; height: number };
-
-function sampleBrightness(
-  ctx: CanvasRenderingContext2D,
-  zone: Rect,
-): number {
+function sampleBrightness(ctx: CanvasRenderingContext2D, zone: Rect): number {
   const x = Math.max(0, Math.round(zone.x));
   const y = Math.max(0, Math.round(zone.y));
   const w = Math.min(ctx.canvas.width - x, Math.round(zone.width));
@@ -84,36 +119,76 @@ function sampleBrightness(
   return sum / count;
 }
 
+function resolveColors(
+  theme: CalendarTheme,
+  isDark: boolean,
+  opacity: number,
+): ThemeColors {
+  const dark = {
+    text: '#ffffff',
+    dim: 'rgba(255,255,255,0.6)',
+    sun: '#ff6b6b',
+    sat: '#74b9ff',
+  };
+  const light = {
+    text: '#1a1a1a',
+    dim: 'rgba(0,0,0,0.5)',
+    sun: '#e74c3c',
+    sat: '#2980b9',
+  };
+
+  switch (theme) {
+    case 'dark':
+      return { ...dark, panel: `rgba(0,0,0,${opacity})`, shadow: '' };
+    case 'light':
+      return { ...light, panel: `rgba(255,255,255,${opacity})`, shadow: '' };
+    case 'transparent': {
+      const c = isDark ? dark : light;
+      return {
+        ...c,
+        panel: 'transparent',
+        shadow: isDark ? 'rgba(0,0,0,0.8)' : 'rgba(255,255,255,0.9)',
+      };
+    }
+    default:
+      return isDark
+        ? { ...dark, panel: `rgba(0,0,0,${opacity})`, shadow: '' }
+        : { ...light, panel: `rgba(255,255,255,${opacity})`, shadow: '' };
+  }
+}
+
 function drawCalendar(
   ctx: CanvasRenderingContext2D,
   data: MonthData,
   grid: (number | null)[][],
   today: number,
-  isDark: boolean,
-  preset: DevicePreset,
+  colors: ThemeColors,
+  s: number,
   zone: Rect,
 ): void {
-  const s = preset.width / BASE_WIDTH;
+  // Panel
+  if (colors.panel !== 'transparent') {
+    ctx.fillStyle = colors.panel;
+    ctx.beginPath();
+    ctx.roundRect(zone.x, zone.y, zone.width, zone.height, 32 * s);
+    ctx.fill();
+  }
 
-  const panel = isDark ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.55)';
-  const text = isDark ? '#ffffff' : '#1a1a1a';
-  const dim = isDark ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.5)';
-  const sun = isDark ? '#ff6b6b' : '#e74c3c';
-  const sat = isDark ? '#74b9ff' : '#2980b9';
-
-  ctx.fillStyle = panel;
-  ctx.beginPath();
-  ctx.roundRect(zone.x, zone.y, zone.width, zone.height, 32 * s);
-  ctx.fill();
+  // Text shadow (transparent theme)
+  if (colors.shadow) {
+    ctx.shadowColor = colors.shadow;
+    ctx.shadowBlur = 6 * s;
+  }
 
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
 
-  const title = `${data.year}년 ${data.month}월`;
-  ctx.fillStyle = text;
+  // Title
+  ctx.fillStyle = colors.text;
   ctx.font = `bold ${Math.round(54 * s)}px ${FONT}`;
-  ctx.fillText(title, zone.x + zone.width / 2, zone.y + 60 * s);
+  ctx.fillText(`${data.year}년 ${data.month}월`, zone.x + zone.width / 2, zone.y + 60 * s);
 
+  // Day headers
   const pad = 40 * s;
   const innerW = zone.width - pad * 2;
   const cellW = innerW / 7;
@@ -121,10 +196,11 @@ function drawCalendar(
 
   ctx.font = `${Math.round(34 * s)}px ${FONT}`;
   for (let i = 0; i < 7; i++) {
-    ctx.fillStyle = i === 0 ? sun : i === 6 ? sat : dim;
+    ctx.fillStyle = i === 0 ? colors.sun : i === 6 ? colors.sat : colors.dim;
     ctx.fillText(DAY_LABELS[i], zone.x + pad + cellW * i + cellW / 2, headerY);
   }
 
+  // Date grid
   const gridTop = headerY + 50 * s;
   const gridBottom = zone.y + zone.height - 30 * s;
   const rowH = (gridBottom - gridTop) / grid.length;
@@ -139,16 +215,23 @@ function drawCalendar(
       const cy = gridTop + rowH * r + rowH / 2;
 
       if (day === today) {
+        const prevShadow = ctx.shadowColor;
+        ctx.shadowColor = 'transparent';
         ctx.fillStyle = '#e94560';
         ctx.beginPath();
         ctx.arc(cx, cy, 32 * s, 0, Math.PI * 2);
         ctx.fill();
         ctx.fillStyle = '#ffffff';
+        ctx.fillText(String(day), cx, cy);
+        ctx.shadowColor = prevShadow;
       } else {
-        ctx.fillStyle = c === 0 ? sun : c === 6 ? sat : text;
+        ctx.fillStyle = c === 0 ? colors.sun : c === 6 ? colors.sat : colors.text;
+        ctx.fillText(String(day), cx, cy);
       }
-
-      ctx.fillText(String(day), cx, cy);
     }
   }
+
+  // Reset shadow
+  ctx.shadowColor = 'transparent';
+  ctx.shadowBlur = 0;
 }
