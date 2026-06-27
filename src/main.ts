@@ -1,5 +1,13 @@
 import './style.css';
-import { renderLockscreen, type Offset } from './render';
+import {
+  renderLockscreen,
+  DEFAULT_STYLE,
+  SIZE_MULT,
+  type Offset,
+  type CalendarStyle,
+  type CalendarTheme,
+  type CalendarSize,
+} from './render';
 import { PRESETS, DEFAULT_PRESET, type DevicePreset } from './safezones';
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
@@ -7,6 +15,7 @@ const app = document.querySelector<HTMLDivElement>('#app')!;
 let currentImage: HTMLImageElement | null = null;
 let currentPreset: DevicePreset = DEFAULT_PRESET;
 let calendarOffset: Offset = { x: 0, y: 0 };
+let currentStyle: CalendarStyle = { ...DEFAULT_STYLE };
 let cachedBlob: Blob | null = null;
 let prevPreviewUrl = '';
 
@@ -22,7 +31,7 @@ const canvas = document.createElement('canvas');
 canvas.className = 'preview';
 canvas.style.display = 'none';
 
-// 미리보기 <img> — 기본 표시, 길게 눌러 저장 가능
+// 미리보기 <img>
 const preview = document.createElement('img');
 preview.className = 'preview';
 preview.alt = '달력 배경화면 미리보기';
@@ -30,7 +39,7 @@ preview.alt = '달력 배경화면 미리보기';
 function rerender() {
   const img = getImage();
   if (!img.complete || img.naturalWidth === 0) return;
-  renderLockscreen(canvas, img, currentPreset, calendarOffset);
+  renderLockscreen(canvas, img, currentPreset, calendarOffset, currentStyle);
   canvas.toBlob((b) => {
     cachedBlob = b;
     if (!b) return;
@@ -91,24 +100,29 @@ let displayScale = 1;
 const wrap = document.createElement('div');
 wrap.className = 'preview-wrap';
 
+function clampOffset(ox: number, oy: number): Offset {
+  const a = currentPreset.calendarArea;
+  const p = currentPreset;
+  const extra = SIZE_MULT[currentStyle.size] - 1;
+  const dw = (a.width * extra) / 2;
+  const dh = (a.height * extra) / 2;
+  return {
+    x: Math.max(-a.x + dw, Math.min(p.width - a.x - a.width - dw, ox)),
+    y: Math.max(-a.y + dh, Math.min(p.height - a.y - a.height - dh, oy)),
+  };
+}
+
 function isOnCalendar(clientX: number, clientY: number): boolean {
   const rect = preview.getBoundingClientRect();
   if (rect.width === 0) return false;
   const scale = currentPreset.width / rect.width;
-  const cx = (clientX - rect.left) * scale;
-  const cy = (clientY - rect.top) * scale;
+  const px = (clientX - rect.left) * scale;
+  const py = (clientY - rect.top) * scale;
   const a = currentPreset.calendarArea;
-  const ax = a.x + calendarOffset.x;
-  const ay = a.y + calendarOffset.y;
-  return cx >= ax && cx <= ax + a.width && cy >= ay && cy <= ay + a.height;
-}
-
-function clampOffset(ox: number, oy: number): Offset {
-  const a = currentPreset.calendarArea;
-  return {
-    x: Math.max(-a.x, Math.min(currentPreset.width - a.width - a.x, ox)),
-    y: Math.max(-a.y, Math.min(currentPreset.height - a.height - a.y, oy)),
-  };
+  const sm = SIZE_MULT[currentStyle.size];
+  const zx = a.x + calendarOffset.x + (a.width * (1 - sm)) / 2;
+  const zy = a.y + calendarOffset.y + (a.height * (1 - sm)) / 2;
+  return px >= zx && px <= zx + a.width * sm && py >= zy && py <= zy + a.height * sm;
 }
 
 function beginDrag(clientX: number, clientY: number) {
@@ -118,7 +132,7 @@ function beginDrag(clientX: number, clientY: number) {
   dragStartOffset = { ...calendarOffset };
   isDragging = true;
 
-  renderLockscreen(canvas, getImage(), currentPreset, calendarOffset);
+  renderLockscreen(canvas, getImage(), currentPreset, calendarOffset, currentStyle);
   preview.style.display = 'none';
   canvas.style.display = '';
 }
@@ -128,7 +142,7 @@ function moveDrag(clientX: number, clientY: number) {
   const dx = (clientX - dragStartTouch.x) * displayScale;
   const dy = (clientY - dragStartTouch.y) * displayScale;
   calendarOffset = clampOffset(dragStartOffset.x + dx, dragStartOffset.y + dy);
-  renderLockscreen(canvas, getImage(), currentPreset, calendarOffset);
+  renderLockscreen(canvas, getImage(), currentPreset, calendarOffset, currentStyle);
 }
 
 function endDrag() {
@@ -150,7 +164,6 @@ function endDrag() {
   }, 'image/png');
 }
 
-// 터치
 wrap.addEventListener('touchstart', (e) => {
   if (e.touches.length !== 1) return;
   const t = e.touches[0];
@@ -159,17 +172,13 @@ wrap.addEventListener('touchstart', (e) => {
     beginDrag(t.clientX, t.clientY);
   }
 }, { passive: false });
-
 wrap.addEventListener('touchmove', (e) => {
   if (!isDragging) return;
   e.preventDefault();
   moveDrag(e.touches[0].clientX, e.touches[0].clientY);
 }, { passive: false });
-
 wrap.addEventListener('touchend', () => endDrag());
 wrap.addEventListener('touchcancel', () => endDrag());
-
-// 마우스 (데스크톱)
 wrap.addEventListener('mousedown', (e) => {
   if (isOnCalendar(e.clientX, e.clientY)) {
     e.preventDefault();
@@ -181,6 +190,84 @@ document.addEventListener('mousemove', (e) => {
   moveDrag(e.clientX, e.clientY);
 });
 document.addEventListener('mouseup', () => endDrag());
+
+// — 스타일 패널 —
+const stylePanel = document.createElement('div');
+stylePanel.className = 'style-panel';
+
+// 테마
+const themeRow = document.createElement('div');
+themeRow.className = 'style-row';
+const themeLabel = document.createElement('span');
+themeLabel.className = 'style-label';
+themeLabel.textContent = '테마';
+const themeBtnsWrap = document.createElement('div');
+themeBtnsWrap.className = 'style-btns';
+const themes: [CalendarTheme, string][] = [
+  ['auto', '자동'], ['dark', '다크'], ['light', '라이트'], ['transparent', '투명'],
+];
+const themeButtons = themes.map(([value, label], i) => {
+  const btn = document.createElement('button');
+  btn.className = 'style-btn' + (i === 0 ? ' active' : '');
+  btn.textContent = label;
+  btn.addEventListener('click', () => {
+    currentStyle.theme = value;
+    themeButtons.forEach((b) => b.classList.remove('active'));
+    btn.classList.add('active');
+    opacityRow.style.display = value === 'transparent' ? 'none' : '';
+    rerender();
+  });
+  themeBtnsWrap.appendChild(btn);
+  return btn;
+});
+themeRow.append(themeLabel, themeBtnsWrap);
+
+// 투명도
+const opacityRow = document.createElement('div');
+opacityRow.className = 'style-row';
+const opLabel = document.createElement('span');
+opLabel.className = 'style-label';
+opLabel.textContent = '배경';
+const opSlider = document.createElement('input');
+opSlider.type = 'range';
+opSlider.min = '0';
+opSlider.max = '100';
+opSlider.value = String(Math.round(currentStyle.opacity * 100));
+opSlider.className = 'opacity-slider';
+opSlider.addEventListener('input', () => {
+  currentStyle.opacity = Number(opSlider.value) / 100;
+  rerender();
+});
+opacityRow.append(opLabel, opSlider);
+
+// 크기
+const sizeRow = document.createElement('div');
+sizeRow.className = 'style-row';
+const sizeLabel = document.createElement('span');
+sizeLabel.className = 'style-label';
+sizeLabel.textContent = '크기';
+const sizeBtnsWrap = document.createElement('div');
+sizeBtnsWrap.className = 'style-btns';
+const sizes: [CalendarSize, string][] = [
+  ['small', '작게'], ['medium', '보통'], ['large', '크게'],
+];
+const sizeButtons = sizes.map(([value, label], i) => {
+  const btn = document.createElement('button');
+  btn.className = 'style-btn' + (i === 1 ? ' active' : '');
+  btn.textContent = label;
+  btn.addEventListener('click', () => {
+    currentStyle.size = value;
+    sizeButtons.forEach((b) => b.classList.remove('active'));
+    btn.classList.add('active');
+    calendarOffset = clampOffset(calendarOffset.x, calendarOffset.y);
+    rerender();
+  });
+  sizeBtnsWrap.appendChild(btn);
+  return btn;
+});
+sizeRow.append(sizeLabel, sizeBtnsWrap);
+
+stylePanel.append(themeRow, opacityRow, sizeRow);
 
 // — 저장/공유 —
 const shareBtn = document.createElement('button');
@@ -217,7 +304,7 @@ hint.textContent = '달력을 드래그해서 위치 조정 · 이미지를 길�
 
 // — DOM 조립 —
 wrap.append(preview, canvas);
-app.append(uploadLabel, presetBar, wrap, hint, shareBtn);
+app.append(uploadLabel, presetBar, wrap, hint, stylePanel, shareBtn);
 
 sampleImg.onload = () => rerender();
 if (sampleImg.complete && sampleImg.naturalWidth > 0) rerender();
