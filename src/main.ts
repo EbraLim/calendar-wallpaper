@@ -267,7 +267,24 @@ const sizeButtons = sizes.map(([value, label], i) => {
 });
 sizeRow.append(sizeLabel, sizeBtnsWrap);
 
-stylePanel.append(themeRow, opacityRow, sizeRow);
+// 음력
+const lunarRow = document.createElement('div');
+lunarRow.className = 'style-row';
+const lunarLabel = document.createElement('span');
+lunarLabel.className = 'style-label';
+lunarLabel.textContent = '음력';
+const lunarToggle = document.createElement('button');
+lunarToggle.className = 'style-btn active';
+lunarToggle.textContent = 'ON';
+lunarToggle.addEventListener('click', () => {
+  currentStyle.showLunar = !currentStyle.showLunar;
+  lunarToggle.textContent = currentStyle.showLunar ? 'ON' : 'OFF';
+  lunarToggle.classList.toggle('active', currentStyle.showLunar);
+  rerender();
+});
+lunarRow.append(lunarLabel, lunarToggle);
+
+stylePanel.append(themeRow, opacityRow, sizeRow, lunarRow);
 
 // — 저장/공유 —
 const shareBtn = document.createElement('button');
