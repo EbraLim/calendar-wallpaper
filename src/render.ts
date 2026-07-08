@@ -1,5 +1,7 @@
 import { type DevicePreset } from './safezones';
 import { getMonthData, getCalendarGrid, type MonthData } from './calendar';
+import { getHolidays } from './holidays';
+import { getLunarDays, formatLunarDay, type LunarDay } from './lunar';
 
 const DAY_LABELS = ['일', '월', '화', '수', '목', '금', '토'];
 const FONT = '-apple-system, "Apple SD Gothic Neo", system-ui, sans-serif';
@@ -17,12 +19,14 @@ export interface CalendarStyle {
   theme: CalendarTheme;
   opacity: number;
   size: CalendarSize;
+  showLunar: boolean;
 }
 
 export const DEFAULT_STYLE: CalendarStyle = {
   theme: 'auto',
   opacity: 0.4,
   size: 'medium',
+  showLunar: true,
 };
 
 export const SIZE_MULT: Record<CalendarSize, number> = {
@@ -78,7 +82,12 @@ export function renderLockscreen(
   const colors = resolveColors(style.theme, isDark, style.opacity);
   const s = (preset.width / BASE_WIDTH) * sm;
 
-  drawCalendar(ctx, data, grid, now.getDate(), colors, s, zone);
+  const holidays = getHolidays(data.year, data.month);
+  const lunarDays = style.showLunar
+    ? getLunarDays(data.year, data.month, data.daysInMonth)
+    : null;
+
+  drawCalendar(ctx, data, grid, now.getDate(), colors, s, zone, holidays, lunarDays);
 }
 
 // ---- internal ----
@@ -165,8 +174,9 @@ function drawCalendar(
   colors: ThemeColors,
   s: number,
   zone: Rect,
+  holidays: Set<number>,
+  lunarDays: Map<number, LunarDay> | null,
 ): void {
-  // Panel
   if (colors.panel !== 'transparent') {
     ctx.fillStyle = colors.panel;
     ctx.beginPath();
@@ -174,7 +184,6 @@ function drawCalendar(
     ctx.fill();
   }
 
-  // Text shadow (transparent theme)
   if (colors.shadow) {
     ctx.shadowColor = colors.shadow;
     ctx.shadowBlur = 6 * s;
@@ -183,12 +192,10 @@ function drawCalendar(
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
 
-  // Title
   ctx.fillStyle = colors.text;
   ctx.font = `bold ${Math.round(54 * s)}px ${FONT}`;
   ctx.fillText(`${data.year}년 ${data.month}월`, zone.x + zone.width / 2, zone.y + 60 * s);
 
-  // Day headers
   const pad = 40 * s;
   const innerW = zone.width - pad * 2;
   const cellW = innerW / 7;
@@ -200,38 +207,55 @@ function drawCalendar(
     ctx.fillText(DAY_LABELS[i], zone.x + pad + cellW * i + cellW / 2, headerY);
   }
 
-  // Date grid
   const gridTop = headerY + 50 * s;
   const gridBottom = zone.y + zone.height - 30 * s;
   const rowH = (gridBottom - gridTop) / grid.length;
+  const lunarShift = lunarDays ? 8 * s : 0;
+  const dateFontSize = Math.round(42 * s);
+  const lunarFontSize = Math.round(22 * s);
 
-  ctx.font = `${Math.round(42 * s)}px ${FONT}`;
   for (let r = 0; r < grid.length; r++) {
     for (let c = 0; c < 7; c++) {
       const day = grid[r][c];
       if (day === null) continue;
 
-      const cx = zone.x + pad + cellW * c + cellW / 2;
-      const cy = gridTop + rowH * r + rowH / 2;
+      const cellX = zone.x + pad + cellW * c + cellW / 2;
+      const cellY = gridTop + rowH * r + rowH / 2;
+      const dateY = cellY - lunarShift;
+      const isHoliday = holidays.has(day);
 
       if (day === today) {
         const prevShadow = ctx.shadowColor;
         ctx.shadowColor = 'transparent';
         ctx.fillStyle = '#e94560';
         ctx.beginPath();
-        ctx.arc(cx, cy, 32 * s, 0, Math.PI * 2);
+        ctx.arc(cellX, dateY, 32 * s, 0, Math.PI * 2);
         ctx.fill();
         ctx.fillStyle = '#ffffff';
-        ctx.fillText(String(day), cx, cy);
+        ctx.font = `${dateFontSize}px ${FONT}`;
+        ctx.fillText(String(day), cellX, dateY);
         ctx.shadowColor = prevShadow;
       } else {
-        ctx.fillStyle = c === 0 ? colors.sun : c === 6 ? colors.sat : colors.text;
-        ctx.fillText(String(day), cx, cy);
+        const dayColor = isHoliday || c === 0
+          ? colors.sun
+          : c === 6 ? colors.sat : colors.text;
+        ctx.fillStyle = dayColor;
+        ctx.font = `${dateFontSize}px ${FONT}`;
+        ctx.fillText(String(day), cellX, dateY);
+      }
+
+      if (lunarDays) {
+        const ld = lunarDays.get(day);
+        if (ld) {
+          const isBold = ld.lunarDay === 1 || ld.lunarDay === 15;
+          ctx.font = `${isBold ? 'bold ' : ''}${lunarFontSize}px ${FONT}`;
+          ctx.fillStyle = colors.dim;
+          ctx.fillText(formatLunarDay(ld.lunarDay), cellX, dateY + 28 * s);
+        }
       }
     }
   }
 
-  // Reset shadow
   ctx.shadowColor = 'transparent';
   ctx.shadowBlur = 0;
 }
